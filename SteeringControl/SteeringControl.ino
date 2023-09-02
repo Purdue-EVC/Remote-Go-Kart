@@ -10,12 +10,12 @@ int talonPWMPin = 9; //Pin the yellow can bus wire is connected to
 int encoderPWMPin = 0; //Pin the absolute encoder is pluged into
 
 //PID
+int iterationTime = 50;
 double pastError = 0.0;
 double pastInt = 0.0;
 double Kp = 1.0;
-double Ki = 0.0;
+double Ki = 0.1*(1/iterationTime;
 double Kd = 0.0;
-int iterationTime = 50;
 
 void setup() {
   talonSRX.attach(talonPWMPin);  // attaches the server object for the talon to the talonPWMPin pin
