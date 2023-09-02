@@ -11,6 +11,6 @@ void setup() {
 }
 
 void loop() {
-  int rawPower = map(power, 0, 1023, 0, 100); //Converts percent out put to raw output for the motor
+  int rawPower = map(power, 0, 100, 0, 1023); //Converts percent out put to raw output for the motor
   talonSRX.write(rawPower); //writes the power to the talon srx
 }
