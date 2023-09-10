@@ -9,6 +9,12 @@ double targetEncoderAngle = 0.0;
 int talonPWMPin = 9; //Pin the yellow can bus wire is connected to
 int encoderPWMPin = 3; //Pin the absolute encoder is pluged into
 
+long lastPWM = 0;
+long currentPWM = 0;
+long filteredPWM = 0;
+
+float weight = 0.5;
+
 //PID
 // int iterationTime = 50;
 // double pastError = 0.0;
@@ -25,7 +31,13 @@ void setup() {
 void loop() {
   // setMotorPower(pidPowerToAngle(getAngle(), targetEncoderAngle));
   // delay(iterationTime);
-  Serial.println(GetPWM(encoderPWMPin));//
+  lastPWM = currentPWM;
+  currentPWM = GetPWM(encoderPWMPin);
+  filteredPWM = GetFilteredPWM(currentPWM, lastPWM, weight)
+
+
+  Serial.println(currentPWM);//Current PWM
+  Serial.println(filteredPWM); //Filtered PWM
 }
 
 // int pidPowerToAngle(double angle, double targetAngle){
@@ -65,4 +77,8 @@ long GetPWM(int pin)
   //   return (long)digitalRead(pin) ? 100.0 : 0.0;  // HIGH == 100%,  LOW = 0%
 
   return (100*highTime) / (highTime + lowTime));  // highTime as percentage of total cycle time
+}
+
+long GetFilteredPWM(long currentPWM, long lastPWM, float weight) {
+  return weight * currentPWM + (1 - weight) * lastPWM -1;
 }
