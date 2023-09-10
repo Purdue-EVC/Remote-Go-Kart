@@ -1,4 +1,5 @@
 #include <Servo.h>
+#include <Filter.h>
 
 Servo talonSRX;
 
@@ -9,11 +10,16 @@ double targetEncoderAngle = 0.0;
 int talonPWMPin = 9; //Pin the yellow can bus wire is connected to
 int encoderPWMPin = 3; //Pin the absolute encoder is pluged into
 
+/*
+The implementation I made myself is still here; Delete if the library works - Siddarth
+*/
 long lastPWM = 0;
 long currentPWM = 0;
 long filteredPWM = 0;
 
-float weight = 0.5;
+float weight = 50;
+
+ExponentialFilter<float> FilteredTemperature(weight, 0);
 
 //PID
 // int iterationTime = 50;
@@ -33,10 +39,8 @@ void loop() {
   // delay(iterationTime);
   lastPWM = currentPWM;
   currentPWM = GetPWM(encoderPWMPin);
-  filteredPWM = GetFilteredPWM(currentPWM, lastPWM, weight)
+  filteredPWM = FilteredTemperature.Filter(currentPWM);
 
-
-  Serial.println(currentPWM);//Current PWM
   Serial.println(filteredPWM); //Filtered PWM
 }
 
