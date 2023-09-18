@@ -148,11 +148,26 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   //Starts hal timing for input capture
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_2);   // indirect channel
   HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);   // main channel
   HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_2);   // indirect channel
+  HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim3, TIM_CHANNEL_2);   // indirect channel
+  HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim4, TIM_CHANNEL_2);   // indirect channel
+  HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim5, TIM_CHANNEL_2);   // indirect channel
+  HAL_TIM_IC_Start_IT(&htim8, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim8, TIM_CHANNEL_2);   // indirect channel
+  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim9, TIM_CHANNEL_2);   // indirect channel
+  HAL_TIM_IC_Start_IT(&htim12, TIM_CHANNEL_1);   // main channel
+  HAL_TIM_IC_Start(&htim12, TIM_CHANNEL_2);   // indirect channel
 
-  HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-  TIM1->CCR1 = 450; //Sets the pwm output of tim1 channel 1 to 450
+  HAL_TIM_PWM_Start(&htim10, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
+  TIM10->CCR1 = 450; //Sets the pwm output of tim1 channel 1 to 450
   /* USER CODE END 2 */
 
   /* Infinite loop */
