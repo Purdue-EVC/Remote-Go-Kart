@@ -1,0 +1,16 @@
+!SESSION 2023-09-18 15:01:21.802 -----------------------------------------------
+eclipse.buildId=Version 1.13.1
+java.version=17.0.6
+java.vendor=Eclipse Adoptium
+BootLoader constants: OS=macosx, ARCH=x86_64, WS=cocoa, NL=en_US
+Framework arguments:  -keyring /Users/ryan/.eclipse_keyring
+Command-line arguments:  -os macosx -ws cocoa -arch x86_64 -keyring /Users/ryan/.eclipse_keyring
+
+!ENTRY com.st.stm32cube.ide.mcu.informationcenter 1 1 2023-09-18 15:01:38.310
+!MESSAGE Log4j2 initialized with config file /Users/ryan/Documents/GitHub/EVC-Remote-Cart/.metadata/.log4j2.xml
+
+!ENTRY com.st.stm32cube.ide.mcu.ide 1 1 2023-09-18 15:01:42.298
+!MESSAGE Started RMI Server, listening on port 41337
+
+!ENTRY org.eclipse.cdt.core 1 0 2023-09-18 15:03:03.087
+!MESSAGE Indexed 'RCGoKart' (25 sources, 87 headers) in 6.56 sec: 6,818 declarations; 49,501 references; 0 unresolved inclusions; 1 syntax errors; 2 unresolved names (0.0036%)
