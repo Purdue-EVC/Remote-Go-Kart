@@ -60,8 +60,8 @@ all: main-build
 main-build: RCGoKart.elf secondary-outputs
 
 # Tool invocations
-RCGoKart.elf RCGoKart.map: $(OBJS) $(USER_OBJS) /Users/ryan/Documents/GitHub/EVC-Remote-Cart/RCGoKart/STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "RCGoKart.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"/Users/ryan/Documents/GitHub/EVC-Remote-Cart/RCGoKart/STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="RCGoKart.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+RCGoKart.elf RCGoKart.map: $(OBJS) $(USER_OBJS) C:\Users\rpodo\OneDrive\Documents\Coding\Personal\ Projects\EVC-Remote-Cart\RCGoKart\STM32F446RETX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
+	arm-none-eabi-gcc -o "RCGoKart.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\rpodo\OneDrive\Documents\Coding\Personal Projects\EVC-Remote-Cart\RCGoKart\STM32F446RETX_FLASH.ld" --specs=nosys.specs -Wl,-Map="RCGoKart.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 
