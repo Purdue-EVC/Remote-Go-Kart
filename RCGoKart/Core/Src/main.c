@@ -87,6 +87,10 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 		}
 	}
 }
+
+uint32_t convertPWMInToOut(uint32_t PWMIn){
+	return (540 * (PWMIn-90355))/13387;
+}
 /* USER CODE END 0 */
 
 /**
@@ -128,7 +132,6 @@ int main(void)
 
   HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
   TIM1->CCR1 = 450; //Sets the pwm output of tim1 channel 1 to 450
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -141,6 +144,7 @@ int main(void)
 
 	  curVal = TIM2->CCR2;
 	  printf("%lu0a\n", curVal);
+	  TIM1->CCR1 = convertPWMInToOut(curVal);
 	  HAL_Delay(100);
   }
   /* USER CODE END 3 */
