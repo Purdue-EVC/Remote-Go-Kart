@@ -105,6 +105,8 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 uint32_t convertPWMInToOut(uint32_t PWMIn){
 	return (540 * (PWMIn-90355))/13387;
 }
+
+
 /* USER CODE END 0 */
 
 /**
@@ -804,7 +806,7 @@ static void MX_TIM10_Init(void)
   htim10.Instance = TIM10;
   htim10.Init.Prescaler = 0;
   htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim10.Init.Period = 65535;
+  htim10.Init.Period = 1800-1;
   htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim10.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim10) != HAL_OK)
@@ -850,7 +852,7 @@ static void MX_TIM11_Init(void)
   htim11.Instance = TIM11;
   htim11.Init.Prescaler = 0;
   htim11.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim11.Init.Period = 65535;
+  htim11.Init.Period = 1800-1;
   htim11.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim11.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim11) != HAL_OK)
