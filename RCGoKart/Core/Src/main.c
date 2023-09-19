@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,6 +56,7 @@ TIM_HandleTypeDef htim11;
 TIM_HandleTypeDef htim12;
 
 UART_HandleTypeDef huart1;
+
 
 /* USER CODE BEGIN PV */
 
@@ -125,6 +127,7 @@ int main(void)
 
   /* USER CODE BEGIN Init */
   uint32_t curVal;
+  uint8_t debug = true;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -149,27 +152,27 @@ int main(void)
   MX_TIM12_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  //Starts hal timing for input capture
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_2);   // indirect channel
-  HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_2);   // indirect channel
-  HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim3, TIM_CHANNEL_2);   // indirect channel
-  HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim4, TIM_CHANNEL_2);   // indirect channel
-  HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim5, TIM_CHANNEL_2);   // indirect channel
-  HAL_TIM_IC_Start_IT(&htim8, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim8, TIM_CHANNEL_2);   // indirect channel
-  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim9, TIM_CHANNEL_2);   // indirect channel
-  HAL_TIM_IC_Start_IT(&htim12, TIM_CHANNEL_1);   // main channel
-  HAL_TIM_IC_Start(&htim12, TIM_CHANNEL_2);   // indirect channel
+  //Starts HAL timing for input capture
+  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim1, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim2, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim4, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim4, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim5, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim8, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim8, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim9, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim12, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim12, TIM_CHANNEL_2);
 
   HAL_TIM_PWM_Start(&htim10, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
-  TIM10->CCR1 = 450; //Sets the pwm output of tim1 channel 1 to 450
+  TIM10->CCR1 = 450; //Sets the PWM output of tim1 channel 1 to 450
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -179,11 +182,25 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-	  curVal = TIM2->CCR2;
-	  TIM1->CCR1 = convertPWMInToOut(curVal);
-	  printf("%lu0a\n", curVal);
-	  HAL_Delay(100);
+	  if(debug){
+		  printf("%lu0a\n", TIM2->CCR2);
+		  printf("%lu0a\n", TIM1->CCR2);
+		  printf("%lu0a\n", convertPWMInToOut(TIM2->CCR2));
+	  }
+	  if(TIM4->CCR1>10000){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
+		  if(TIM1->CCR1>10000&&TIM1->CCR1<40000){//Switch to RC mode, middle switch state
+			  curVal = TIM2->CCR2;//Sets curVal to the timer counts per period(PWM signal)
+			  TIM10->CCR1 = convertPWMInToOut(curVal);//Sets the PWM output to the converted PWM input
+			  printf("%lu0a\n", curVal);//Prints the curVal to UART
+			  HAL_Delay(1);//For faster response decrease delay
+		  }
+		  else if(TIM1->CCR1<40000){//Switch to auto mode, high switch state
+			  //auto code
+		  }
+		  else{
+			  //off state, low switch state
+		  }
+	  }
   }
   /* USER CODE END 3 */
 }
