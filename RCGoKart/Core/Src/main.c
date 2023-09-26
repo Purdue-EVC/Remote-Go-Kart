@@ -44,6 +44,8 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+RTC_HandleTypeDef hrtc;
+
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
@@ -57,9 +59,34 @@ TIM_HandleTypeDef htim12;
 
 UART_HandleTypeDef huart1;
 
-
 /* USER CODE BEGIN PV */
 
+//PID
+const kP = 1/180;
+const kI = 0.0;
+const kD = 0.0;
+
+const kOffset = 0;//degrees enocder is off by
+
+const kSteeringEncoderMax = 100000;
+const kSteeringEncoderMin = 10000;
+const kSteeringEncoderRange = kSteeringEncoderMax-kSteeringEncoderMin;
+
+const kDrivingMotorMaxPWM = 1800;
+const kDrivingMotorMinPWM = 0;
+
+
+
+#define cyclesPerSecond 180000000;//180,000,000 clock cycles per second
+
+float pastError = 0;
+
+float integral = 0;
+
+enum State{OFF,RC,AUTO};
+enum EStop{OFF,ON};
+uint8_t maxAngle = 90;//Max angle +- in degrees from center
+uint8_t maxSpeed = 80;//Max percent speed
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -77,6 +104,7 @@ static void MX_TIM10_Init(void);
 static void MX_TIM11_Init(void);
 static void MX_TIM12_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -104,11 +132,46 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
-uint32_t convertPWMInToOut(uint32_t PWMIn){
-	return (540 * (PWMIn-90355))/13387;
+float convertPWMInToOut(uint32_t PWMIn){
+	return ((PWMIn-90355)/26774)-1;
 }
 
+float getPIDPower(float currentPosition, float requestPosition, int cycleTime){
+	float error = requestPosition - currentPosition;
+	integral = integral + (error * cycleTime);
+	float derivative = (error-pastError)/cycleTime;
+	return absMax(kP*error+kI*intgeral+kD*derivative, 1.0);
+}
 
+float getSteeringAngle(){
+	return (((360*(TIM3->CCR1-kSteeringEncoderMin))/kSteeringEncoderRange)+kOffset)%360;
+}
+
+float convertPWMInToAngle(uint32_t PWMIn){
+	return ((360*(PWMIn-90355)/53548)+180)%360;
+}
+
+void setSteeringMotor(float power){//+-1.0
+	short int out = ((absMax(power, 1)+1)/2)*1800;
+	TIM10->CCR1 = out;
+}
+
+float max(float num, float max){
+	if(num>max){
+		return max;
+	}
+	return num;
+}
+float min(float num, float min){
+	if(num<min){
+		return min;
+	}
+	return num;
+}
+
+float absMax(float num, float range){
+	return max(min(num, -range), range);
+}
 /* USER CODE END 0 */
 
 /**
@@ -126,7 +189,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  uint32_t curVal;
+  uint32_t steeringRequest;
   uint8_t debug = true;
   uint8_t pwmOutMax = 1800;
   uint16_t pwmLowState = 10000;
@@ -154,6 +217,7 @@ int main(void)
   MX_TIM11_Init();
   MX_TIM12_Init();
   MX_USART1_UART_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
   //Starts HAL timing for input capture
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -194,9 +258,16 @@ int main(void)
 	  }
 	  if(TIM4->CCR1>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
 		  if(TIM1->CCR1>pwmLowState&&TIM1->CCR1<pwmHighState){//Switch to RC mode, middle switch state
-			  curVal = TIM2->CCR2;//Sets curVal to the timer counts per period(PWM signal)
-			  TIM10->CCR1 = convertPWMInToOut(curVal);//Sets the PWM output to the converted PWM input
-			  HAL_Delay(1);//For faster response decrease delay
+			  steeringRequest = TIM2->CCR2;//Sets curVal to the timer counts per period(PWM signal)
+			  //PID:
+			  if(true){//Switch from PID to raw steering control
+				  setSteeringMotor(getPIDPower(getSteeringAngle(), convertPWMInToAngle(steeringRequest), 10));
+			  }
+			  else{
+				  setSteeringMotor(convertPWMInToOut(steeringRequest));//Sets the PWM output to the converted PWM input
+			  }
+
+			  HAL_Delay(10);//For faster response decrease delay
 		  }
 		  else if(TIM1->CCR1<pwmHighState){//Switch to auto mode, high switch state
 			  //auto code
@@ -233,8 +304,10 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI|RCC_OSCILLATORTYPE_HSE;
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
@@ -318,6 +391,76 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date
+  */
+  sTime.Hours = 0x0;
+  sTime.Minutes = 0x0;
+  sTime.Seconds = 0x0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  sDate.Month = RTC_MONTH_JANUARY;
+  sDate.Date = 0x1;
+  sDate.Year = 0x0;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Enable the WakeUp
+  */
+  if (HAL_RTCEx_SetWakeUpTimer(&hrtc, 0, RTC_WAKEUPCLOCK_RTCCLK_DIV16) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
 
 }
 
