@@ -128,6 +128,9 @@ int main(void)
   /* USER CODE BEGIN Init */
   uint32_t curVal;
   uint8_t debug = true;
+  uint8_t pwmOutMax = 1800;
+  uint16_t pwmLowState = 10000;
+  uint16_t pwmHighState = 40000;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -183,23 +186,31 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  if(debug){
+		  //UART printing
 		  printf("%lu0a\n", TIM2->CCR2);
 		  printf("%lu0a\n", TIM1->CCR2);
 		  printf("%lu0a\n", convertPWMInToOut(TIM2->CCR2));
+		  printf("%lu0a\n", curVal);
 	  }
-	  if(TIM4->CCR1>10000){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
-		  if(TIM1->CCR1>10000&&TIM1->CCR1<40000){//Switch to RC mode, middle switch state
+	  if(TIM4->CCR1>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
+		  if(TIM1->CCR1>pwmLowState&&TIM1->CCR1<pwmHighState){//Switch to RC mode, middle switch state
 			  curVal = TIM2->CCR2;//Sets curVal to the timer counts per period(PWM signal)
 			  TIM10->CCR1 = convertPWMInToOut(curVal);//Sets the PWM output to the converted PWM input
-			  printf("%lu0a\n", curVal);//Prints the curVal to UART
 			  HAL_Delay(1);//For faster response decrease delay
 		  }
-		  else if(TIM1->CCR1<40000){//Switch to auto mode, high switch state
+		  else if(TIM1->CCR1<pwmHighState){//Switch to auto mode, high switch state
 			  //auto code
 		  }
 		  else{
 			  //off state, low switch state
+			  TIM10->CCR1 = pwmOutMax/2;//Sets steering motor power to 0
 		  }
+	  }
+	  else{
+		  TIM10->CCR1 = pwmOutMax/2;//Sets steering motor power to 0
+
+		  //TODO:
+		  //Add Relay to loop and activate the relay on remote e-stop to trigger the e-stop on the kart
 	  }
   }
   /* USER CODE END 3 */
