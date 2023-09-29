@@ -44,6 +44,8 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+I2C_HandleTypeDef hi2c2;
+
 RTC_HandleTypeDef hrtc;
 
 TIM_HandleTypeDef htim1;
@@ -83,6 +85,10 @@ float pastError = 0;
 
 float integral = 0;
 
+float maxAngle = 0;//Range from 0 to 1
+
+float maxSpeed = 0;//Range from 0 to 1
+
 enum State{OFF,RC,AUTO};
 enum EStop{OFF,ON};
 uint8_t maxAngle = 90;//Max angle +- in degrees from center
@@ -105,6 +111,7 @@ static void MX_TIM11_Init(void);
 static void MX_TIM12_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_RTC_Init(void);
+static void MX_I2C2_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -132,8 +139,12 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
-float convertPWMInToOut(uint32_t PWMIn){
-	return ((PWMIn-90355)/26774)-1;
+float steeringInput(uint32_t rawSteeringInput){
+	return ((rawSteeringInput-90355)/26774)-1;
+}
+
+float drivingInput(uint32_t rawDrivingInput){
+	return ((rawDrivingInput-90355)/53548);
 }
 
 float getPIDPower(float currentPosition, float requestPosition, int cycleTime){
@@ -143,17 +154,38 @@ float getPIDPower(float currentPosition, float requestPosition, int cycleTime){
 	return absMax(kP*error+kI*intgeral+kD*derivative, 1.0);
 }
 
-float getSteeringAngle(){
+float getEncoderAngle(){
 	return (((360*(TIM3->CCR1-kSteeringEncoderMin))/kSteeringEncoderRange)+kOffset)%360;
 }
 
-float convertPWMInToAngle(uint32_t PWMIn){
-	return ((360*(PWMIn-90355)/53548)+180)%360;
+float rawSteeringToAngle(uint32_t steeringInput){
+	return ((360*(steeringInput-90355)/53548)+180)%360;
 }
 
+/**
+ * Sets the steering motors power
+ * @power value from -1.0 to 1.0
+ */
 void setSteeringMotor(float power){//+-1.0
-	short int out = ((absMax(power, 1)+1)/2)*1800;
-	TIM10->CCR1 = out;
+	short int out = ((absMax(power, 1)+1)/2)*1800;//Converts the range -1 to 1, to 0 to 1800
+	TIM10->CCR1 = out*maxAngle;
+}
+
+/**
+ * Sets the driving motors power
+ * @power value from 0 to 1.0
+ */
+void setDrivingMotor(float power){//0 to 1.0
+	short int out = (absMax(power, 1))*1800;//Converts the range 0 to 1, to 0 to 1800
+	TIM11->CCR1 = out*maxSpeed;
+}
+
+void updateMaxAngle(){
+	maxAngle = ((((TIM12->CCR1)-90355)/53548));
+}
+
+void updateMaxSpeed(){
+	maxSpeed = ((((TIM9->CCR1)-90355)/53548));
 }
 
 float max(float num, float max){
@@ -190,6 +222,7 @@ int main(void)
 
   /* USER CODE BEGIN Init */
   uint32_t steeringRequest;
+  uint32_t drivingRequest;
   uint8_t debug = true;
   uint8_t pwmOutMax = 1800;
   uint16_t pwmLowState = 10000;
@@ -218,6 +251,7 @@ int main(void)
   MX_TIM12_Init();
   MX_USART1_UART_Init();
   MX_RTC_Init();
+  MX_I2C2_Init();
   /* USER CODE BEGIN 2 */
   //Starts HAL timing for input capture
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -240,6 +274,7 @@ int main(void)
   HAL_TIM_PWM_Start(&htim10, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
   TIM10->CCR1 = 450; //Sets the PWM output of tim1 channel 1 to 450
+  TIM11->CCR1 = 0; //Sets the PWM output of tim1 channel 1 to 450
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -249,22 +284,28 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+	  //DEBUG
 	  if(debug){
 		  //UART printing
 		  printf("%lu0a\n", TIM2->CCR2);
 		  printf("%lu0a\n", TIM1->CCR2);
-		  printf("%lu0a\n", convertPWMInToOut(TIM2->CCR2));
+		  printf("%lu0a\n", steeringInput(TIM2->CCR2));
 		  printf("%lu0a\n", curVal);
 	  }
+	  //E-STOP
 	  if(TIM4->CCR1>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
+		  //State management
 		  if(TIM1->CCR1>pwmLowState&&TIM1->CCR1<pwmHighState){//Switch to RC mode, middle switch state
 			  steeringRequest = TIM2->CCR2;//Sets curVal to the timer counts per period(PWM signal)
+			  drivingRequest = TIM5->CCR1;
 			  //PID:
 			  if(true){//Switch from PID to raw steering control
-				  setSteeringMotor(getPIDPower(getSteeringAngle(), convertPWMInToAngle(steeringRequest), 10));
+				  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringRequest), 10));
+				  setDrivingMotor(drivingInput(drivingRequest));
 			  }
 			  else{
-				  setSteeringMotor(convertPWMInToOut(steeringRequest));//Sets the PWM output to the converted PWM input
+				  setSteeringMotor(steeringInput(steeringRequest));//Sets the PWM output to the converted PWM input
+				  setDrivingMotor(drivingInput(drivingRequest));
 			  }
 
 			  HAL_Delay(10);//For faster response decrease delay
@@ -391,6 +432,40 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief I2C2 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_I2C2_Init(void)
+{
+
+  /* USER CODE BEGIN I2C2_Init 0 */
+
+  /* USER CODE END I2C2_Init 0 */
+
+  /* USER CODE BEGIN I2C2_Init 1 */
+
+  /* USER CODE END I2C2_Init 1 */
+  hi2c2.Instance = I2C2;
+  hi2c2.Init.ClockSpeed = 100000;
+  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c2.Init.OwnAddress1 = 0;
+  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c2.Init.OwnAddress2 = 0;
+  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C2_Init 2 */
+
+  /* USER CODE END I2C2_Init 2 */
 
 }
 
