@@ -54,12 +54,11 @@ TIM_HandleTypeDef htim3;
 TIM_HandleTypeDef htim4;
 TIM_HandleTypeDef htim5;
 TIM_HandleTypeDef htim8;
-TIM_HandleTypeDef htim9;
 TIM_HandleTypeDef htim10;
 TIM_HandleTypeDef htim11;
 TIM_HandleTypeDef htim12;
 
-UART_HandleTypeDef huart1;
+UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
@@ -103,13 +102,12 @@ static void MX_TIM3_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_TIM5_Init(void);
 static void MX_TIM8_Init(void);
-static void MX_TIM9_Init(void);
 static void MX_TIM10_Init(void);
 static void MX_TIM11_Init(void);
 static void MX_TIM12_Init(void);
-static void MX_USART1_UART_Init(void);
 static void MX_RTC_Init(void);
 static void MX_I2C2_Init(void);
+static void MX_USART2_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -174,7 +172,7 @@ float getEncoderAngle(){
 }
 
 float rawSteeringToAngle(uint32_t steerInput){
-	return ((360*(steeringInput(steerInput)))+180.0)%360.0;
+	return (((int)(36000*(steeringInput(steerInput)))+18000.0)%36000)/100;
 }
 
 /**
@@ -238,8 +236,6 @@ int main(void)
   /* USER CODE BEGIN Init */
   uint32_t steeringRequest;
   uint32_t drivingRequest;
-  uint8_t debug = true;
-  uint8_t pwmOutMax = 1800;
   uint16_t pwmBottomState = 5000;
   uint16_t pwmLowState = 25000;
   uint16_t pwmHighState = 45000;
@@ -261,13 +257,12 @@ int main(void)
   MX_TIM4_Init();
   MX_TIM5_Init();
   MX_TIM8_Init();
-  MX_TIM9_Init();
   MX_TIM10_Init();
   MX_TIM11_Init();
   MX_TIM12_Init();
-  MX_USART1_UART_Init();
   MX_RTC_Init();
   MX_I2C2_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   //Starts HAL timing for input capture
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -303,7 +298,7 @@ int main(void)
 	  //DEBUG
 	  if(true){
 		  //UART printing
-		  printf("%lu0a\n", TIM4->CCR2);
+//		  printf("%lu0a\n", TIM4->CCR2);
 //		  printf("%lu0a\n", TIM1->CCR2);
 //		  printf("%lu0a\n", steeringInput(TIM2->CCR2));
 	  }
@@ -331,7 +326,7 @@ int main(void)
 		  }
 		  else if(TIM1->CCR2>pwmHighState){//Switch to auto mode, high switch state
 			  setSteeringMotor(0.5);
-			  //auto code
+			  //TODO: Auto Code
 		  }
 		  else{
 			  //off state, low switch state
@@ -445,7 +440,7 @@ static void MX_ADC1_Init(void)
 
   /** Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time.
   */
-  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Channel = ADC_CHANNEL_7;
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -989,73 +984,6 @@ static void MX_TIM8_Init(void)
 }
 
 /**
-  * @brief TIM9 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM9_Init(void)
-{
-
-  /* USER CODE BEGIN TIM9_Init 0 */
-
-  /* USER CODE END TIM9_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
-  TIM_IC_InitTypeDef sConfigIC = {0};
-
-  /* USER CODE BEGIN TIM9_Init 1 */
-
-  /* USER CODE END TIM9_Init 1 */
-  htim9.Instance = TIM9;
-  htim9.Init.Prescaler = 0;
-  htim9.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim9.Init.Period = 65535;
-  htim9.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim9.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim9) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim9, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_IC_Init(&htim9) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_RESET;
-  sSlaveConfig.InputTrigger = TIM_TS_TI1FP1;
-  sSlaveConfig.TriggerPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sSlaveConfig.TriggerPrescaler = TIM_ICPSC_DIV1;
-  sSlaveConfig.TriggerFilter = 0;
-  if (HAL_TIM_SlaveConfigSynchro(&htim9, &sSlaveConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
-  sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
-  sConfigIC.ICFilter = 0;
-  if (HAL_TIM_IC_ConfigChannel(&htim9, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_INDIRECTTI;
-  if (HAL_TIM_IC_ConfigChannel(&htim9, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM9_Init 2 */
-
-  /* USER CODE END TIM9_Init 2 */
-
-}
-
-/**
   * @brief TIM10 Initialization Function
   * @param None
   * @retval None
@@ -1215,35 +1143,35 @@ static void MX_TIM12_Init(void)
 }
 
 /**
-  * @brief USART1 Initialization Function
+  * @brief USART2 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART1_UART_Init(void)
+static void MX_USART2_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART1_Init 0 */
+  /* USER CODE BEGIN USART2_Init 0 */
 
-  /* USER CODE END USART1_Init 0 */
+  /* USER CODE END USART2_Init 0 */
 
-  /* USER CODE BEGIN USART1_Init 1 */
+  /* USER CODE BEGIN USART2_Init 1 */
 
-  /* USER CODE END USART1_Init 1 */
-  huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
-  huart1.Init.WordLength = UART_WORDLENGTH_8B;
-  huart1.Init.StopBits = UART_STOPBITS_1;
-  huart1.Init.Parity = UART_PARITY_NONE;
-  huart1.Init.Mode = UART_MODE_TX_RX;
-  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart1) != HAL_OK)
+  /* USER CODE END USART2_Init 1 */
+  huart2.Instance = USART2;
+  huart2.Init.BaudRate = 115200;
+  huart2.Init.WordLength = UART_WORDLENGTH_8B;
+  huart2.Init.StopBits = UART_STOPBITS_1;
+  huart2.Init.Parity = UART_PARITY_NONE;
+  huart2.Init.Mode = UART_MODE_TX_RX;
+  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART1_Init 2 */
+  /* USER CODE BEGIN USART2_Init 2 */
 
-  /* USER CODE END USART1_Init 2 */
+  /* USER CODE END USART2_Init 2 */
 
 }
 
@@ -1287,7 +1215,7 @@ PUTCHAR_PROTOTYPE
 {
   /* Place your implementation of fputc here */
   /* e.g. write a character to the USART1 and Loop until the end of transmission */
-  HAL_UART_Transmit(&huart1, (uint8_t *)&ch, 1, 0xFFFF);
+  HAL_UART_Transmit(&huart2, (uint8_t *)&ch, 1, 0xFFFF);
 
   return ch;
 }
