@@ -70,8 +70,8 @@ const kD = 0.0;
 
 const kOffset = 0;//degrees enocder is off by
 
-const kSteeringEncoderMax = 100000;
-const kSteeringEncoderMin = 10000;
+const kSteeringEncoderMax = 134000;
+const kSteeringEncoderMin = 41700;
 const kSteeringEncoderRange = kSteeringEncoderMax-kSteeringEncoderMin;
 
 const kDrivingMotorMaxPWM = 1800;
@@ -90,9 +90,7 @@ float maxAngle = 0;//Range from 0 to 1
 float maxSpeed = 0;//Range from 0 to 1
 
 enum State{OFF,RC,AUTO};
-enum EStop{OFF,ON};
-uint8_t maxAngle = 90;//Max angle +- in degrees from center
-uint8_t maxSpeed = 80;//Max percent speed
+enum EStop{DISABLED, ENABLED};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -139,8 +137,23 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
+uint32_t max = 177900;
+uint32_t min = 90000;
+float x = 0;
+uint32_t y = 0;
+uint32_t encoder = 0;
+uint32_t a = 0;
+uint32_t b = 0;
+uint32_t c = 0;
+
 float steeringInput(uint32_t rawSteeringInput){
-	return ((rawSteeringInput-90355)/26774)-1;
+	if(rawSteeringInput>max){
+		max = rawSteeringInput;
+	}
+	if(min>rawSteeringInput){
+		min = rawSteeringInput;
+	}
+	return (float)(rawSteeringInput-min)/(max-min);
 }
 
 float drivingInput(uint32_t rawDrivingInput){
@@ -151,15 +164,17 @@ float getPIDPower(float currentPosition, float requestPosition, int cycleTime){
 	float error = requestPosition - currentPosition;
 	integral = integral + (error * cycleTime);
 	float derivative = (error-pastError)/cycleTime;
-	return absMax(kP*error+kI*intgeral+kD*derivative, 1.0);
+//	return absMax(kP*error+kI*integral+kD*derivative, (float)1.0);
+	encoder = kP*error+kI*integral+kD*derivative;
+	return 0.5;
 }
 
 float getEncoderAngle(){
 	return (((360*(TIM3->CCR1-kSteeringEncoderMin))/kSteeringEncoderRange)+kOffset)%360;
 }
 
-float rawSteeringToAngle(uint32_t steeringInput){
-	return ((360*(steeringInput-90355)/53548)+180)%360;
+float rawSteeringToAngle(uint32_t steerInput){
+	return ((360*(steeringInput(steerInput)))+180.0)%360.0;
 }
 
 /**
@@ -167,8 +182,8 @@ float rawSteeringToAngle(uint32_t steeringInput){
  * @power value from -1.0 to 1.0
  */
 void setSteeringMotor(float power){//+-1.0
-	short int out = ((absMax(power, 1)+1)/2)*1800;//Converts the range -1 to 1, to 0 to 1800
-	TIM10->CCR1 = out*maxAngle;
+	short int out = (((power)+1)/2)*180;//Converts the range 0 to 1, to 0 to 1800
+	TIM10->CCR1 = out;
 }
 
 /**
@@ -176,7 +191,7 @@ void setSteeringMotor(float power){//+-1.0
  * @power value from 0 to 1.0
  */
 void setDrivingMotor(float power){//0 to 1.0
-	short int out = (absMax(power, 1))*1800;//Converts the range 0 to 1, to 0 to 1800
+	short int out = (((power)+1)/2)*1800;//Converts the range 0 to 1, to 0 to 1800
 	TIM11->CCR1 = out*maxSpeed;
 }
 
@@ -188,22 +203,22 @@ void updateMaxSpeed(){
 	maxSpeed = ((((TIM9->CCR1)-90355)/53548));
 }
 
-float max(float num, float max){
-	if(num>max){
-		return max;
-	}
-	return num;
-}
-float min(float num, float min){
-	if(num<min){
-		return min;
-	}
-	return num;
-}
+//float max(float num, float max){
+//	if(num>max){
+//		return max;
+//	}
+//	return num;
+//}
+//float min(float num, float min){
+//	if(num<min){
+//		return min;
+//	}
+//	return num;
+//}
 
-float absMax(float num, float range){
-	return max(min(num, -range), range);
-}
+//float absMax(float num, float range){
+//	return max(min(num, -range), range);
+//}
 /* USER CODE END 0 */
 
 /**
@@ -225,8 +240,9 @@ int main(void)
   uint32_t drivingRequest;
   uint8_t debug = true;
   uint8_t pwmOutMax = 1800;
-  uint16_t pwmLowState = 10000;
-  uint16_t pwmHighState = 40000;
+  uint16_t pwmBottomState = 5000;
+  uint16_t pwmLowState = 25000;
+  uint16_t pwmHighState = 45000;
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -285,41 +301,48 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 	  //DEBUG
-	  if(debug){
+	  if(true){
 		  //UART printing
-		  printf("%lu0a\n", TIM2->CCR2);
-		  printf("%lu0a\n", TIM1->CCR2);
-		  printf("%lu0a\n", steeringInput(TIM2->CCR2));
-		  printf("%lu0a\n", curVal);
+		  printf("%lu0a\n", TIM4->CCR2);
+//		  printf("%lu0a\n", TIM1->CCR2);
+//		  printf("%lu0a\n", steeringInput(TIM2->CCR2));
 	  }
 	  //E-STOP
-	  if(TIM4->CCR1>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
+	  if(TIM4->CCR2>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
 		  //State management
-		  if(TIM1->CCR1>pwmLowState&&TIM1->CCR1<pwmHighState){//Switch to RC mode, middle switch state
+		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
 			  steeringRequest = TIM2->CCR2;//Sets curVal to the timer counts per period(PWM signal)
-			  drivingRequest = TIM5->CCR1;
+			  drivingRequest = TIM5->CCR2;
 			  //PID:
 			  if(true){//Switch from PID to raw steering control
+				  a = getEncoderAngle();
+				  b = rawSteeringToAngle(steeringRequest);
 				  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringRequest), 10));
 				  setDrivingMotor(drivingInput(drivingRequest));
 			  }
 			  else{
+				  x = steeringInput(steeringRequest);
+				  y = TIM3->CCR2;
 				  setSteeringMotor(steeringInput(steeringRequest));//Sets the PWM output to the converted PWM input
 				  setDrivingMotor(drivingInput(drivingRequest));
 			  }
 
 			  HAL_Delay(10);//For faster response decrease delay
 		  }
-		  else if(TIM1->CCR1<pwmHighState){//Switch to auto mode, high switch state
+		  else if(TIM1->CCR2>pwmHighState){//Switch to auto mode, high switch state
+			  setSteeringMotor(0.5);
 			  //auto code
 		  }
 		  else{
 			  //off state, low switch state
-			  TIM10->CCR1 = pwmOutMax/2;//Sets steering motor power to 0
+			  setSteeringMotor(0.5);
+//			  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
 		  }
 	  }
 	  else{
-		  TIM10->CCR1 = pwmOutMax/2;//Sets steering motor power to 0
+//		  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
+//		  setSteeringMotor(0);
+		  setSteeringMotor(0.5);
 
 		  //TODO:
 		  //Add Relay to loop and activate the relay on remote e-stop to trigger the e-stop on the kart
@@ -1050,7 +1073,7 @@ static void MX_TIM10_Init(void)
 
   /* USER CODE END TIM10_Init 1 */
   htim10.Instance = TIM10;
-  htim10.Init.Prescaler = 0;
+  htim10.Init.Prescaler = 999;
   htim10.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim10.Init.Period = 1800-1;
   htim10.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
