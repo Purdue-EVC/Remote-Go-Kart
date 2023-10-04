@@ -44,6 +44,8 @@
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
+DAC_HandleTypeDef hdac;
+
 I2C_HandleTypeDef hi2c2;
 
 RTC_HandleTypeDef hrtc;
@@ -62,34 +64,19 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 
-//PID
-const kP = 1/180;
-const kI = 0.0;
-const kD = 0.0;
+const float kSteeringEncoderMax = 43000.0;
+const float kSteeringEncoderMin = 14000.0;
+const float kSteeringEncoderRange = 64000.0;
 
-const kOffset = 0;//degrees enocder is off by
+const int maxEncoderAngle = 347;
+const int minEncoderAngle = 167;
+const int EncoderRange = maxEncoderAngle-minEncoderAngle;//180
 
-const kSteeringEncoderMax = 134000;
-const kSteeringEncoderMin = 41700;
-const kSteeringEncoderRange = kSteeringEncoderMax-kSteeringEncoderMin;
-
-const kDrivingMotorMaxPWM = 1800;
-const kDrivingMotorMinPWM = 0;
+const int kDrivingMotorMax = 4096;
+const int kDrivingMotorMin = 0;
 
 
-
-#define cyclesPerSecond 180000000;//180,000,000 clock cycles per second
-
-float pastError = 0;
-
-float integral = 0;
-
-float maxAngle = 0;//Range from 0 to 1
-
-float maxSpeed = 0;//Range from 0 to 1
-
-enum State{OFF,RC,AUTO};
-enum EStop{DISABLED, ENABLED};
+float maxSpeed = .25;//Range from 0 to 1
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -108,6 +95,7 @@ static void MX_TIM12_Init(void);
 static void MX_RTC_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_DAC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -135,44 +123,114 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
-uint32_t max = 177900;
-uint32_t min = 90000;
-float x = 0;
-uint32_t y = 0;
-uint32_t encoder = 0;
-uint32_t a = 0;
-uint32_t b = 0;
-uint32_t c = 0;
+uint32_t currentSteeringInputMax = 177900;
+uint32_t currentSteeringInputMin = 90000;
+uint32_t currentDrivingInputMax = 177900;
+uint32_t currentDrivingInputMin = 90000;
+
+const uint32_t steeringInputAbsoluteMax = 180000;
+const uint32_t steeringInputAbsoluteMin = 80000;
+const uint32_t drivingInputAbsoluteMax = 180000;
+const uint32_t drivingInputAbsoluteMin = 80000;
 
 float steeringInput(uint32_t rawSteeringInput){
-	if(rawSteeringInput>max){
-		max = rawSteeringInput;
+	if(rawSteeringInput > currentSteeringInputMax && rawSteeringInput < steeringInputAbsoluteMax){
+		currentSteeringInputMax = rawSteeringInput;
 	}
-	if(min>rawSteeringInput){
-		min = rawSteeringInput;
+	if(rawSteeringInput < currentSteeringInputMin && rawSteeringInput > steeringInputAbsoluteMin){
+		currentSteeringInputMin = rawSteeringInput;
 	}
-	return (float)(rawSteeringInput-min)/(max-min);
+	return (float)(rawSteeringInput-currentSteeringInputMin)/(currentSteeringInputMax-currentSteeringInputMin);
 }
 
 float drivingInput(uint32_t rawDrivingInput){
-	return ((rawDrivingInput-90355)/53548);
+	if(rawDrivingInput > currentDrivingInputMax && rawSteeringInput < drivingInputAbsoluteMax){
+		currentDrivingInputMax = rawDrivingInput;
+	}
+	if(rawDrivingInput < currentDrivingInputMin && rawSteeringInput > drivingInputAbsoluteMin){
+		currentDrivingInputMin = rawDrivingInput;
+	}
+	return (float)(rawDrivingInput-currentDrivingInputMin)/(currentDrivingInputMax-currentDrivingInputMin);
 }
 
-float getPIDPower(float currentPosition, float requestPosition, int cycleTime){
-	float error = requestPosition - currentPosition;
+//WORKING PID:
+
+//PID
+//float kP = 1.0;
+//float kI = 0.0;
+//float kD = 0.0;
+//
+//const double kOffset = 0;//degrees enocder is off by
+//const int maxEncoderAngle = 347;
+//const int minEncoderAngle = 167;
+//const int EncoderRange = 180;
+//float error;
+//float derivative;
+//float pos = 0;
+//float pidMax =15;
+//float getPIDPower(float currentPosition, float requestPosition, float cycleTime){
+//
+//	error = requestPosition-currentPosition;
+//	integral = integral + (error * cycleTime);
+//	derivative = (error-pastError)/cycleTime;
+//	pos = kP*error+kI*integral+kD*derivative;
+//	float encReturn = 0.5;
+//	if(pos<(pidMax*-1.0)){
+//		encReturn = 0.0;
+//	}
+//	else if(pos>pidMax){
+//		encReturn = 1.0;
+//	}
+//	else{
+//		encReturn = (pos+pidMax)/(pidMax*2);
+//	}
+////	if(encReturn>.505){
+//		return encReturn;
+////	}
+////	else if(encReturn<.495){
+////		return encReturn;
+////	}
+////	else{
+////		return .5;
+////	}
+//}
+
+float kPinverse = 20;
+float kP = 0.05;//1/20
+float kI = 0.0;
+float kD = 0.0;
+const double kOffset = .5;
+
+
+float error;
+float derivative;
+float pos = 0;
+float pastError = 0;
+
+
+float getPIDPower(float currentPosition, float requestPosition, float cycleTime){//New version:
+	error = requestPosition-currentPosition;
 	integral = integral + (error * cycleTime);
-	float derivative = (error-pastError)/cycleTime;
-//	return absMax(kP*error+kI*integral+kD*derivative, (float)1.0);
-	encoder = kP*error+kI*integral+kD*derivative;
-	return 0.5;
+	derivative = (error-pastError)/cycleTime;
+	pastError = error;
+	pos = kP*error+kI*integral+kD*derivative+kOffset;
+	if(pos>1){
+		return 1;
+	}
+	else if(pos<0){
+		return 0;
+	}
+	else{
+		return pos;
+	}
 }
 
 float getEncoderAngle(){
-	return (((360*(TIM3->CCR1-kSteeringEncoderMin))/kSteeringEncoderRange)+kOffset)%360;
+	return (((int)(36000*((TIM3->CCR2-kSteeringEncoderMin)/(kSteeringEncoderRange)))+18000)%36000)/100;
 }
 
-float rawSteeringToAngle(uint32_t steerInput){
-	return (((int)(36000*(steeringInput(steerInput)))+18000.0)%36000)/100;
+float rawSteeringToAngle(float steerInput){
+	return (steerInput*EncoderRange)+minEncoderAngle;
 }
 
 /**
@@ -180,7 +238,7 @@ float rawSteeringToAngle(uint32_t steerInput){
  * @power value from -1.0 to 1.0
  */
 void setSteeringMotor(float power){//+-1.0
-	short int out = (((power)+1)/2)*180;//Converts the range 0 to 1, to 0 to 1800
+	short int out = (((power)+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
 	TIM10->CCR1 = out;
 }
 
@@ -189,8 +247,8 @@ void setSteeringMotor(float power){//+-1.0
  * @power value from 0 to 1.0
  */
 void setDrivingMotor(float power){//0 to 1.0
-	short int out = (((power)+1)/2)*1800;//Converts the range 0 to 1, to 0 to 1800
-	TIM11->CCR1 = out*maxSpeed;
+	short int out = (power)*kDrivingMotorMax;//Converts the range 0 to 1, to 0v to 3.3v which is 0 to 4096(kDrivingMotorMax)
+	DAC1->DHR12R1 = out*maxSpeed;
 }
 
 void updateMaxAngle(){
@@ -201,22 +259,6 @@ void updateMaxSpeed(){
 	maxSpeed = ((((TIM9->CCR1)-90355)/53548));
 }
 
-//float max(float num, float max){
-//	if(num>max){
-//		return max;
-//	}
-//	return num;
-//}
-//float min(float num, float min){
-//	if(num<min){
-//		return min;
-//	}
-//	return num;
-//}
-
-//float absMax(float num, float range){
-//	return max(min(num, -range), range);
-//}
 /* USER CODE END 0 */
 
 /**
@@ -234,8 +276,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  uint32_t steeringRequest;
-  uint32_t drivingRequest;
+  uint32_t steeringRequest = max-min;
+  uint32_t drivingRequest = 0;
   uint16_t pwmBottomState = 5000;
   uint16_t pwmLowState = 25000;
   uint16_t pwmHighState = 45000;
@@ -263,6 +305,7 @@ int main(void)
   MX_RTC_Init();
   MX_I2C2_Init();
   MX_USART2_UART_Init();
+  MX_DAC_Init();
   /* USER CODE BEGIN 2 */
   //Starts HAL timing for input capture
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -277,8 +320,8 @@ int main(void)
   HAL_TIM_IC_Start(&htim5, TIM_CHANNEL_2);
   HAL_TIM_IC_Start_IT(&htim8, TIM_CHANNEL_1);
   HAL_TIM_IC_Start(&htim8, TIM_CHANNEL_2);
-  HAL_TIM_IC_Start_IT(&htim9, TIM_CHANNEL_1);
-  HAL_TIM_IC_Start(&htim9, TIM_CHANNEL_2);
+  HAL_TIM_IC_Start_IT(&htim8, TIM_CHANNEL_1);
+  HAL_TIM_IC_Start(&htim8, TIM_CHANNEL_2);
   HAL_TIM_IC_Start_IT(&htim12, TIM_CHANNEL_1);
   HAL_TIM_IC_Start(&htim12, TIM_CHANNEL_2);
 
@@ -295,44 +338,31 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  //DEBUG
-	  if(true){
-		  //UART printing
-//		  printf("%lu0a\n", TIM4->CCR2);
-//		  printf("%lu0a\n", TIM1->CCR2);
-//		  printf("%lu0a\n", steeringInput(TIM2->CCR2));
-	  }
 	  //E-STOP
 	  if(TIM4->CCR2>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
 		  //State management
-		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
-			  steeringRequest = TIM2->CCR2;//Sets curVal to the timer counts per period(PWM signal)
-			  drivingRequest = TIM5->CCR2;
-			  //PID:
-			  if(true){//Switch from PID to raw steering control
-				  a = getEncoderAngle();
-				  b = rawSteeringToAngle(steeringRequest);
-				  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringRequest), 10));
-				  setDrivingMotor(drivingInput(drivingRequest));
-			  }
-			  else{
-				  x = steeringInput(steeringRequest);
-				  y = TIM3->CCR2;
-				  setSteeringMotor(steeringInput(steeringRequest));//Sets the PWM output to the converted PWM input
-				  setDrivingMotor(drivingInput(drivingRequest));
-			  }
+		  steeringRequest = TIM2->CCR2;
+		  drivingRequest = TIM5->CCR2;
 
-			  HAL_Delay(10);//For faster response decrease delay
+		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
+			  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringInput(steeringRequest)), 10.0));
+			  setDrivingMotor(drivingInput(drivingRequest));
+
 		  }
 		  else if(TIM1->CCR2>pwmHighState){//Switch to auto mode, high switch state
-			  setSteeringMotor(0.5);
+//			  manual RC Control
+			  setSteeringMotor(steeringInput(steeringRequest));
+			  setDrivingMotor(drivingInput(drivingRequest));
 			  //TODO: Auto Code
+//			  setSteeringMotor(0.5);
 		  }
 		  else{
 			  //off state, low switch state
 			  setSteeringMotor(0.5);
 //			  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
 		  }
+
+		  HAL_Delay(10);//For faster response decrease delay
 	  }
 	  else{
 //		  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
@@ -450,6 +480,46 @@ static void MX_ADC1_Init(void)
   /* USER CODE BEGIN ADC1_Init 2 */
 
   /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief DAC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_DAC_Init(void)
+{
+
+  /* USER CODE BEGIN DAC_Init 0 */
+
+  /* USER CODE END DAC_Init 0 */
+
+  DAC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN DAC_Init 1 */
+
+  /* USER CODE END DAC_Init 1 */
+
+  /** DAC Initialization
+  */
+  hdac.Instance = DAC;
+  if (HAL_DAC_Init(&hdac) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** DAC channel OUT1 config
+  */
+  sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
+  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
+  if (HAL_DAC_ConfigChannel(&hdac, &sConfig, DAC_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN DAC_Init 2 */
+
+  /* USER CODE END DAC_Init 2 */
 
 }
 
