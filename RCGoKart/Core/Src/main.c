@@ -75,8 +75,23 @@ const int EncoderRange = maxEncoderAngle-minEncoderAngle;//180
 const int kDrivingMotorMax = 4096;
 const int kDrivingMotorMin = 0;
 
+const double kOffset = .5;
+
+const int kHalDelay = 10;
 
 float maxSpeed = .25;//Range from 0 to 1
+
+//TODO: convert to const once tuned
+float kPInverse = 20;
+float kP = 0.05;//1/20
+float kI = 0.0;
+float kD = 0.0;
+
+float error;
+float derivative;
+float integral = 0;
+float pos = 0;
+float pastError = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -144,10 +159,10 @@ float steeringInput(uint32_t rawSteeringInput){
 }
 
 float drivingInput(uint32_t rawDrivingInput){
-	if(rawDrivingInput > currentDrivingInputMax && rawSteeringInput < drivingInputAbsoluteMax){
+	if(rawDrivingInput > currentDrivingInputMax && rawDrivingInput < drivingInputAbsoluteMax){
 		currentDrivingInputMax = rawDrivingInput;
 	}
-	if(rawDrivingInput < currentDrivingInputMin && rawSteeringInput > drivingInputAbsoluteMin){
+	if(rawDrivingInput < currentDrivingInputMin && rawDrivingInput > drivingInputAbsoluteMin){
 		currentDrivingInputMin = rawDrivingInput;
 	}
 	return (float)(rawDrivingInput-currentDrivingInputMin)/(currentDrivingInputMax-currentDrivingInputMin);
@@ -195,19 +210,8 @@ float drivingInput(uint32_t rawDrivingInput){
 ////	}
 //}
 
-float kPinverse = 20;
-float kP = 0.05;//1/20
-float kI = 0.0;
-float kD = 0.0;
-const double kOffset = .5;
 
-
-float error;
-float derivative;
-float pos = 0;
-float pastError = 0;
-
-
+//TODO: Yet to be tested:
 float getPIDPower(float currentPosition, float requestPosition, float cycleTime){//New version:
 	error = requestPosition-currentPosition;
 	integral = integral + (error * cycleTime);
@@ -241,6 +245,7 @@ void setSteeringMotor(float power){//+-1.0
 	short int out = (((power)+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
 	TIM10->CCR1 = out;
 }
+short int o = 0;
 
 /**
  * Sets the driving motors power
@@ -248,17 +253,22 @@ void setSteeringMotor(float power){//+-1.0
  */
 void setDrivingMotor(float power){//0 to 1.0
 	short int out = (power)*kDrivingMotorMax;//Converts the range 0 to 1, to 0v to 3.3v which is 0 to 4096(kDrivingMotorMax)
-	DAC1->DHR12R1 = out*maxSpeed;
+	o = out;
+	 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
+	 DAC_ALIGN_12B_R, out);
 }
 
-void updateMaxAngle(){
-	maxAngle = ((((TIM12->CCR1)-90355)/53548));
-}
+//void updateMaxAngle(){
+//	maxAngle = ((((TIM12->CCR1)-90355)/53548));
+//}
 
 void updateMaxSpeed(){
 	maxSpeed = ((((TIM9->CCR1)-90355)/53548));
 }
 
+float a = 0;
+uint32_t steeringRequest = (drivingInputAbsoluteMin+drivingInputAbsoluteMax/2);
+uint32_t drivingRequest = 0;
 /* USER CODE END 0 */
 
 /**
@@ -268,6 +278,7 @@ void updateMaxSpeed(){
 int main(void)
 {
   /* USER CODE BEGIN 1 */
+	hdac.State = HAL_DAC_STATE_RESET;
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -276,8 +287,6 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  uint32_t steeringRequest = max-min;
-  uint32_t drivingRequest = 0;
   uint16_t pwmBottomState = 5000;
   uint16_t pwmLowState = 25000;
   uint16_t pwmHighState = 45000;
@@ -327,8 +336,9 @@ int main(void)
 
   HAL_TIM_PWM_Start(&htim10, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
-  TIM10->CCR1 = 450; //Sets the PWM output of tim1 channel 1 to 450
+  TIM10->CCR1 = 135; //Sets the PWM output of tim1 channel 1 to 450
   TIM11->CCR1 = 0; //Sets the PWM output of tim1 channel 1 to 450
+  HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -340,17 +350,18 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  //E-STOP
 	  if(TIM4->CCR2>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
-		  //State management
+		  //Inputs
 		  steeringRequest = TIM2->CCR2;
 		  drivingRequest = TIM5->CCR2;
-
+		  a = drivingInput(drivingRequest);
+		  //State management
 		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
-			  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringInput(steeringRequest)), 10.0));
+			  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringInput(steeringRequest)), (float)kHalDelay));
 			  setDrivingMotor(drivingInput(drivingRequest));
 
 		  }
 		  else if(TIM1->CCR2>pwmHighState){//Switch to auto mode, high switch state
-//			  manual RC Control
+//			  Manual RC Control
 			  setSteeringMotor(steeringInput(steeringRequest));
 			  setDrivingMotor(drivingInput(drivingRequest));
 			  //TODO: Auto Code
@@ -358,19 +369,18 @@ int main(void)
 		  }
 		  else{
 			  //off state, low switch state
-			  setSteeringMotor(0.5);
+			  setSteeringMotor(kOffset);
 //			  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
 		  }
 
-		  HAL_Delay(10);//For faster response decrease delay
+		  HAL_Delay(kHalDelay);//For faster response decrease delay
 	  }
 	  else{
 //		  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
-//		  setSteeringMotor(0);
-		  setSteeringMotor(0.5);
+		  setSteeringMotor(0);
+		  setSteeringMotor(kOffset);
 
-		  //TODO:
-		  //Add Relay to loop and activate the relay on remote e-stop to trigger the e-stop on the kart
+		  //TODO: Add Relay to loop and activate the relay on remote e-stop to trigger the e-stop on the kart
 	  }
   }
   /* USER CODE END 3 */
@@ -1019,8 +1029,8 @@ static void MX_TIM8_Init(void)
     Error_Handler();
   }
   sSlaveConfig.SlaveMode = TIM_SLAVEMODE_RESET;
-  sSlaveConfig.InputTrigger = TIM_TS_TI1FP1;
-  sSlaveConfig.TriggerPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
+  sSlaveConfig.InputTrigger = TIM_TS_TI2FP2;
+  sSlaveConfig.TriggerPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
   sSlaveConfig.TriggerPrescaler = TIM_ICPSC_DIV1;
   sSlaveConfig.TriggerFilter = 0;
   if (HAL_TIM_SlaveConfigSynchro(&htim8, &sSlaveConfig) != HAL_OK)
@@ -1028,7 +1038,7 @@ static void MX_TIM8_Init(void)
     Error_Handler();
   }
   sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_RISING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
+  sConfigIC.ICSelection = TIM_ICSELECTION_INDIRECTTI;
   sConfigIC.ICPrescaler = TIM_ICPSC_DIV1;
   sConfigIC.ICFilter = 0;
   if (HAL_TIM_IC_ConfigChannel(&htim8, &sConfigIC, TIM_CHANNEL_1) != HAL_OK)
@@ -1036,7 +1046,7 @@ static void MX_TIM8_Init(void)
     Error_Handler();
   }
   sConfigIC.ICPolarity = TIM_INPUTCHANNELPOLARITY_FALLING;
-  sConfigIC.ICSelection = TIM_ICSELECTION_INDIRECTTI;
+  sConfigIC.ICSelection = TIM_ICSELECTION_DIRECTTI;
   if (HAL_TIM_IC_ConfigChannel(&htim8, &sConfigIC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
