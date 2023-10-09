@@ -77,21 +77,22 @@ const int kDrivingMotorMin = 0;
 
 const double kOffset = .5;
 
-const int kHalDelay = 10;
+float kHalDelay = 1;
 
 float maxSpeed = .25;//Range from 0 to 1
 
 //TODO: convert to const once tuned
 float kPInverse = 20;
-float kP = 0.05;//1/20
-float kI = 0.0;
-float kD = 0.0;
+float kP = 0.025;//1/20
+float kI = 0.0000001;
+float kD = 1;
 
 float error;
 float derivative;
 float integral = 0;
 float pos = 0;
 float pastError = 0;
+float minError = 0.1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -138,15 +139,15 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
-uint32_t currentSteeringInputMax = 177900;
-uint32_t currentSteeringInputMin = 90000;
-uint32_t currentDrivingInputMax = 177900;
-uint32_t currentDrivingInputMin = 90000;
+float currentSteeringInputMax = 177900;
+float currentSteeringInputMin = 90000;
+float currentDrivingInputMax = 177900;
+float currentDrivingInputMin = 90000;
 
-const uint32_t steeringInputAbsoluteMax = 180000;
-const uint32_t steeringInputAbsoluteMin = 80000;
-const uint32_t drivingInputAbsoluteMax = 180000;
-const uint32_t drivingInputAbsoluteMin = 80000;
+const float steeringInputAbsoluteMax = 180000;
+const float steeringInputAbsoluteMin = 80000;
+const float drivingInputAbsoluteMax = 180000;
+const float drivingInputAbsoluteMin = 80000;
 
 float steeringInput(uint32_t rawSteeringInput){
 	if(rawSteeringInput > currentSteeringInputMax && rawSteeringInput < steeringInputAbsoluteMax){
@@ -213,19 +214,28 @@ float drivingInput(uint32_t rawDrivingInput){
 
 //TODO: Yet to be tested:
 float getPIDPower(float currentPosition, float requestPosition, float cycleTime){//New version:
-	error = requestPosition-currentPosition;
-	integral = integral + (error * cycleTime);
-	derivative = (error-pastError)/cycleTime;
-	pastError = error;
-	pos = kP*error+kI*integral+kD*derivative+kOffset;
-	if(pos>1){
-		return 1;
+	if(currentPosition<110){
+		currentPosition = currentPosition+360;
 	}
-	else if(pos<0){
-		return 0;
+	error = requestPosition-currentPosition;
+	if((error>minError||-minError>error)||(pastError>minError||-minError>pastError)){
+		integral = integral + (error * cycleTime);
+		derivative = (error-pastError)/cycleTime;
+		pastError = error;
+		pos = kP*error+kI*integral+kD*derivative+kOffset;
+		if(pos>1){
+			return 1;
+		}
+		else if(pos<0){
+			return 0;
+		}
+		else{
+			return pos;
+		}
 	}
 	else{
-		return pos;
+		integral = 0;
+		return .5;
 	}
 }
 
@@ -242,8 +252,13 @@ float rawSteeringToAngle(float steerInput){
  * @power value from -1.0 to 1.0
  */
 void setSteeringMotor(float power){//+-1.0
-	short int out = (((power)+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
-	TIM10->CCR1 = out;
+	if(power<.25){
+		setBreaks(power/.25);
+	}
+	else{
+		short int out = (((((power-.25)/.75))+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
+		TIM10->CCR1 = out;
+	}
 }
 short int o = 0;
 
@@ -258,6 +273,13 @@ void setDrivingMotor(float power){//0 to 1.0
 	 DAC_ALIGN_12B_R, out);
 }
 
+
+void setBreaks(float power){
+//	if(){
+//
+//	}
+}
+
 //void updateMaxAngle(){
 //	maxAngle = ((((TIM12->CCR1)-90355)/53548));
 //}
@@ -267,6 +289,9 @@ void updateMaxSpeed(){
 }
 
 float a = 0;
+float b = 0;
+int cycle = 0;
+int cycleCount = 5;
 uint32_t steeringRequest = (drivingInputAbsoluteMin+drivingInputAbsoluteMax/2);
 uint32_t drivingRequest = 0;
 /* USER CODE END 0 */
@@ -350,14 +375,23 @@ int main(void)
     /* USER CODE BEGIN 3 */
 	  //E-STOP
 	  if(TIM4->CCR2>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
 		  //Inputs
 		  steeringRequest = TIM2->CCR2;
 		  drivingRequest = TIM5->CCR2;
-		  a = drivingInput(drivingRequest);
+		  a = getEncoderAngle();
+		  b = steeringInput(steeringRequest);
 		  //State management
 		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
 			  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringInput(steeringRequest)), (float)kHalDelay));
 			  setDrivingMotor(drivingInput(drivingRequest));
+			  if(cycle>cycleCount){
+				  printf("%f\n",error);
+				  cycle = 1;
+			  }
+			  else{
+				  cycle++;
+			  }
 
 		  }
 		  else if(TIM1->CCR2>pwmHighState){//Switch to auto mode, high switch state
@@ -373,14 +407,14 @@ int main(void)
 //			  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
 		  }
 
-		  HAL_Delay(kHalDelay);//For faster response decrease delay
+		  HAL_Delay(1);//For faster response decrease delay
 	  }
 	  else{
-//		  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
-		  setSteeringMotor(0);
+		  setDrivingMotor(0);
 		  setSteeringMotor(kOffset);
 
 		  //TODO: Add Relay to loop and activate the relay on remote e-stop to trigger the e-stop on the kart
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);
 	  }
   }
   /* USER CODE END 3 */
@@ -1272,11 +1306,21 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2, GPIO_PIN_RESET);
+
   /*Configure GPIO pin : B1_Pin */
   GPIO_InitStruct.Pin = B1_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PC0 PC1 PC2 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_2;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
