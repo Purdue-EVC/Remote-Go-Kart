@@ -93,6 +93,9 @@ float integral = 0;
 float pos = 0;
 float pastError = 0;
 float minError = 0.1;
+
+
+uint16_t brakePosition = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -137,6 +140,12 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 			Frequency = 90000000/ICValue;
 		}
 	}
+}
+
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+    // Read & Update The ADC Result
+	brakePosition = HAL_ADC_GetValue(&hadc1);
 }
 
 float currentSteeringInputMax = 177900;
@@ -247,17 +256,19 @@ float rawSteeringToAngle(float steerInput){
 	return (steerInput*EncoderRange)+minEncoderAngle;
 }
 
+
 /**
- * Sets the steering motors power
+ * Sets the brake motors power
  * @power value from -1.0 to 1.0
  */
 void setSteeringMotor(float power){//+-1.0
 	if(power<.25){
-		setBreaks(power/.25);
+		setBrakes((float)(power/0.25));
 	}
 	else{
 		short int out = (((((power-.25)/.75))+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
 		TIM10->CCR1 = out;
+		setBrakes(0.25);
 	}
 }
 short int o = 0;
@@ -273,11 +284,27 @@ void setDrivingMotor(float power){//0 to 1.0
 	 DAC_ALIGN_12B_R, out);
 }
 
-
-void setBreaks(float power){
-//	if(){
-//
-//	}
+float maxBrake = 100000;
+float minBrake = 10000;
+float brakeRange = (maxBrake-minBrake)*4;
+void setBrakes(float _power){//range from 0.25 to 0.0, 0.25 no breaks, 0.o full breaks. Don't ask it just is.
+	float power = .25-_power;
+	if(((brakePosition-minBrake)/brakeRange)>power){//FWD
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	}
+	else if((((brakePosition-minBrake)/brakeRange)-0.01)<power&&(((brakePosition-minBrake)/brakeRange)+0.01)>power){//STOP
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	}
+	else if(((brakePosition-minBrake)/brakeRange)<power){//REV
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+	}
+	else{//STOP - Error
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+	}
 }
 
 //void updateMaxAngle(){
@@ -340,6 +367,7 @@ int main(void)
   MX_I2C2_Init();
   MX_USART2_UART_Init();
   MX_DAC_Init();
+  HAL_ADCEx_Calibration_Start(&hadc1);
   /* USER CODE BEGIN 2 */
   //Starts HAL timing for input capture
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -358,6 +386,9 @@ int main(void)
   HAL_TIM_IC_Start(&htim8, TIM_CHANNEL_2);
   HAL_TIM_IC_Start_IT(&htim12, TIM_CHANNEL_1);
   HAL_TIM_IC_Start(&htim12, TIM_CHANNEL_2);
+
+
+  HAL_ADC_Start_IT(&hadc1);
 
   HAL_TIM_PWM_Start(&htim10, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
