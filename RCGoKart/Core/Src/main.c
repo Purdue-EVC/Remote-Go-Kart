@@ -262,14 +262,8 @@ float rawSteeringToAngle(float steerInput){
  * @power value from -1.0 to 1.0
  */
 void setSteeringMotor(float power){//+-1.0
-	if(power<.25){
-		setBrakes((float)(power/0.25));
-	}
-	else{
-		short int out = (((((power-.25)/.75))+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
+		short int out = (((power)+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
 		TIM10->CCR1 = out;
-		setBrakes(0.25);
-	}
 }
 short int o = 0;
 
@@ -278,26 +272,40 @@ short int o = 0;
  * @power value from 0 to 1.0
  */
 void setDrivingMotor(float power){//0 to 1.0
-	short int out = (power)*kDrivingMotorMax;//Converts the range 0 to 1, to 0v to 3.3v which is 0 to 4096(kDrivingMotorMax)
+	short int out = ((power-0.25)/0.75)*kDrivingMotorMax;//Converts the range 0.25 to 1, to 0v to 3.3v which is 0 to 4096(kDrivingMotorMax)
 	o = out;
-	 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
-	 DAC_ALIGN_12B_R, out);
+	if(power<=.25){
+		setBrakes((float)((.25-power)/0.25));//Brakes on
+		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
+		 DAC_ALIGN_12B_R, 0);//Motor off
+	}
+	else{
+		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
+		 DAC_ALIGN_12B_R, out);//Motor on
+		setBrakes(0.0);//Brakes off
+	}
+}
+
+
+void setMotor(float power){//0 to 1.0
+		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
+		 DAC_ALIGN_12B_R, power);
 }
 
 float maxBrake = 100000;
 float minBrake = 10000;
-float brakeRange = (maxBrake-minBrake)*4;
-void setBrakes(float _power){//range from 0.25 to 0.0, 0.25 no breaks, 0.o full breaks. Don't ask it just is.
-	float power = .25-_power;
-	if(((brakePosition-minBrake)/brakeRange)>power){//FWD
+float brakeRange = (maxBrake-minBrake);
+void setBrakes(float power){//range from 1.0 to 0.0
+	float goToPos = power;//for negative logic if needed
+	if(((brakePosition-minBrake)/brakeRange)<goToPos){//FWD
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
 	}
-	else if((((brakePosition-minBrake)/brakeRange)-0.01)<power&&(((brakePosition-minBrake)/brakeRange)+0.01)>power){//STOP
+	else if((((brakePosition-minBrake)/brakeRange)-0.01)<goToPos&&(((brakePosition-minBrake)/brakeRange)+0.01)>goToPos){//STOP
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
 	}
-	else if(((brakePosition-minBrake)/brakeRange)<power){//REV
+	else if(((brakePosition-minBrake)/brakeRange)>goToPos){//REV
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
 	}
@@ -416,13 +424,14 @@ int main(void)
 		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
 			  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringInput(steeringRequest)), (float)kHalDelay));
 			  setDrivingMotor(drivingInput(drivingRequest));
-			  if(cycle>cycleCount){
-				  printf("%f\n",error);
-				  cycle = 1;
-			  }
-			  else{
-				  cycle++;
-			  }
+			  //Debug Stuff
+//			  if(cycle>cycleCount){
+//				  printf("%f\n",error);
+//				  cycle = 1;
+//			  }
+//			  else{
+//				  cycle++;
+//			  }
 
 		  }
 		  else if(TIM1->CCR2>pwmHighState){//Switch to auto mode, high switch state
@@ -435,16 +444,19 @@ int main(void)
 		  else{
 			  //off state, low switch state
 			  setSteeringMotor(kOffset);
+			  setMotor(0.0);
+			  setBrakes(1.0);
 //			  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
 		  }
 
 		  HAL_Delay(1);//For faster response decrease delay
 	  }
 	  else{
-		  setDrivingMotor(0);
+		  setMotor(0.0);
+		  setBrakes(1.0);
 		  setSteeringMotor(kOffset);
 
-		  //TODO: Add Relay to loop and activate the relay on remote e-stop to trigger the e-stop on the kart
+		  //TODO: Debug Relay
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);
 	  }
   }
