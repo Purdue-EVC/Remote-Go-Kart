@@ -282,7 +282,7 @@ void setDrivingMotor(float power){//0 to 1.0
 	else{
 		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
 		 DAC_ALIGN_12B_R, out);//Motor on
-		setBrakes(0.0);//Brakes off
+//		setBrakes(0.0);//Brakes off
 	}
 }
 
@@ -292,26 +292,41 @@ void setMotor(float power){//0 to 1.0
 		 DAC_ALIGN_12B_R, power);
 }
 
-float maxBrake = 100000;
-float minBrake = 10000;
+float const maxBrake = 100000;
+float const minBrake = 10000;
 float brakeRange = (maxBrake-minBrake);
 void setBrakes(float power){//range from 1.0 to 0.0
 	float goToPos = power;//for negative logic if needed
-	if(((brakePosition-minBrake)/brakeRange)<goToPos){//FWD
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+//	if(((brakePosition-minBrake)/brakeRange)<goToPos){//FWD
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+//	}
+//	else if((((brakePosition-minBrake)/brakeRange)-0.01)<goToPos&&(((brakePosition-minBrake)/brakeRange)+0.01)>goToPos){//STOP
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+//	}
+//	else if(((brakePosition-minBrake)/brakeRange)>goToPos){//REV
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+//	}
+//	else{//STOP - Error
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+//	}
+	if(power>.75){
+				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+
 	}
-	else if((((brakePosition-minBrake)/brakeRange)-0.01)<goToPos&&(((brakePosition-minBrake)/brakeRange)+0.01)>goToPos){//STOP
+	else if(power<.25){
+				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+
+	}
+	else{
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
 		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-	}
-	else if(((brakePosition-minBrake)/brakeRange)>goToPos){//REV
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
-	}
-	else{//STOP - Error
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+
 	}
 }
 
@@ -375,7 +390,6 @@ int main(void)
   MX_I2C2_Init();
   MX_USART2_UART_Init();
   MX_DAC_Init();
-  HAL_ADCEx_Calibration_Start(&hadc1);
   /* USER CODE BEGIN 2 */
   //Starts HAL timing for input capture
   HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1);
@@ -445,7 +459,7 @@ int main(void)
 			  //off state, low switch state
 			  setSteeringMotor(kOffset);
 			  setMotor(0.0);
-			  setBrakes(1.0);
+//			  setBrakes(1.0);
 //			  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
 		  }
 
@@ -453,7 +467,7 @@ int main(void)
 	  }
 	  else{
 		  setMotor(0.0);
-		  setBrakes(1.0);
+//		  setBrakes(1.0);
 		  setSteeringMotor(kOffset);
 
 		  //TODO: Debug Relay
