@@ -1,0 +1,17 @@
+"Source:","/Users/ryan/Documents/GitHub/EVC-Remote-Cart/RCGoKart/RCKart/RCKart-TestPCB.kicad_sch"
+"Date:","2023 October 25, Wednesday 09:54:53"
+"Tool:","Eeschema 7.0.7"
+"Generator:","/Applications/KiCad/KiCad.app/Contents/SharedSupport/plugins/bom_csv_grouped_by_value.py"
+"Component Count:","9"
+
+"Collated Components:"
+
+"Item","Qty","Reference(s)","Value","LibPart","Footprint","Datasheet","DNP"
+"1","1","A1","STM32 Nucleo Board","MCU_Module:Arduino_UNO_R3","Module:Arduino_UNO_R3_Bare","https://www.arduino.cc/en/Main/arduinoBoardUno",""
+"2","1","J1","Throttle","Connector_Generic:Conn_01x01","Connector_PinSocket_2.54mm:PinSocket_1x01_P2.54mm_Vertical","~",""
+"3","1","J2","Brake Controller","Connector_Generic:Conn_01x02","Connector_PinSocket_2.54mm:PinSocket_1x02_P2.54mm_Vertical","~",""
+"4","2","J3, J13","RC Channels","Connector_Generic:Conn_01x10","Connector_PinSocket_2.54mm:PinSocket_1x10_P2.54mm_Vertical","~",""
+"5","1","J6","Power","Connector:Screw_Terminal_01x03","TerminalBlock:TerminalBlock_bornier-3_P5.08mm","~",""
+"6","1","J9","SIG","Connector:Conn_01x04_Socket","Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical","~",""
+"7","1","J10","PWR","Connector:Conn_01x04_Socket","Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical","~",""
+"8","1","J11","GND","Connector:Conn_01x04_Socket","Connector_PinSocket_2.54mm:PinSocket_1x04_P2.54mm_Vertical","~",""
