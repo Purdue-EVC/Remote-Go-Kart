@@ -43,6 +43,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
 
 DAC_HandleTypeDef hdac;
 
@@ -75,7 +76,7 @@ const int EncoderRange = maxEncoderAngle-minEncoderAngle;//180
 const int kDrivingMotorMax = 4096;
 const int kDrivingMotorMin = 0;
 
-const double kOffset = .5;
+const double kOffset = .45;
 
 float kHalDelay = 1;
 
@@ -95,12 +96,14 @@ float pastError = 0;
 float minError = 0.1;
 
 
-uint16_t brakePosition = 0;
+uint32_t brakePosition = 0;
+uint32_t buffer = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
@@ -142,12 +145,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 	}
 }
 
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
-{
-    // Read & Update The ADC Result
-	brakePosition = HAL_ADC_GetValue(&hadc1);
-}
-
 float currentSteeringInputMax = 177900;
 float currentSteeringInputMin = 90000;
 float currentDrivingInputMax = 177900;
@@ -157,6 +154,8 @@ const float steeringInputAbsoluteMax = 180000;
 const float steeringInputAbsoluteMin = 80000;
 const float drivingInputAbsoluteMax = 180000;
 const float drivingInputAbsoluteMin = 80000;
+
+uint16_t targetBrake = 4095;
 
 float steeringInput(uint32_t rawSteeringInput){
 	if(rawSteeringInput > currentSteeringInputMax && rawSteeringInput < steeringInputAbsoluteMax){
@@ -177,48 +176,6 @@ float drivingInput(uint32_t rawDrivingInput){
 	}
 	return (float)(rawDrivingInput-currentDrivingInputMin)/(currentDrivingInputMax-currentDrivingInputMin);
 }
-
-//WORKING PID:
-
-//PID
-//float kP = 1.0;
-//float kI = 0.0;
-//float kD = 0.0;
-//
-//const double kOffset = 0;//degrees enocder is off by
-//const int maxEncoderAngle = 347;
-//const int minEncoderAngle = 167;
-//const int EncoderRange = 180;
-//float error;
-//float derivative;
-//float pos = 0;
-//float pidMax =15;
-//float getPIDPower(float currentPosition, float requestPosition, float cycleTime){
-//
-//	error = requestPosition-currentPosition;
-//	integral = integral + (error * cycleTime);
-//	derivative = (error-pastError)/cycleTime;
-//	pos = kP*error+kI*integral+kD*derivative;
-//	float encReturn = 0.5;
-//	if(pos<(pidMax*-1.0)){
-//		encReturn = 0.0;
-//	}
-//	else if(pos>pidMax){
-//		encReturn = 1.0;
-//	}
-//	else{
-//		encReturn = (pos+pidMax)/(pidMax*2);
-//	}
-////	if(encReturn>.505){
-//		return encReturn;
-////	}
-////	else if(encReturn<.495){
-////		return encReturn;
-////	}
-////	else{
-////		return .5;
-////	}
-//}
 
 
 //TODO: Yet to be tested:
@@ -255,24 +212,24 @@ float getEncoderAngle(){
 float rawSteeringToAngle(float steerInput){
 	return (steerInput*EncoderRange)+minEncoderAngle;
 }
-
+float steerout = 0;
+float steeroutp = 0;
 
 /**
- * Sets the brake motors power
- * @power value from -1.0 to 1.0
+ * Sets the steering motor's power
  */
-void setSteeringMotor(float power){//+-1.0
-		short int out = (((power)+1)/2)*180;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
-		TIM10->CCR1 = out;
+void setSteeringMotor(float power){
+		steeroutp = power;
+		float out = (power)*180.0;//Converts the range 0 to 1, to 90 to 180 //Dont ask why its that range it just works
+		steerout = out;
+		TIM10->CCR1 = out+45.0;
 }
-short int o = 0;
 
 /**
- * Sets the driving motors power
- * @power value from 0 to 1.0
+ * Sets the driving motor's power
  */
-void setDrivingMotor(float power){//0 to 1.0
-	short int out = ((power-0.25)/0.75)*kDrivingMotorMax;//Converts the range 0.25 to 1, to 0v to 3.3v which is 0 to 4096(kDrivingMotorMax)
+void setDrivingMotor(float power){
+	short int out = ((power-0.25)/0.75)*4096;//Converts the range 0.25 to 1, to 0v to 3.3v which is 0 to 4096(kDrivingMotorMax)
 	o = out;
 	if(power<=.25){
 		setBrakes((float)((.25-power)/0.25));//Brakes on
@@ -282,62 +239,71 @@ void setDrivingMotor(float power){//0 to 1.0
 	else{
 		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
 		 DAC_ALIGN_12B_R, out);//Motor on
-//		setBrakes(0.0);//Brakes off
+	//		setBrakes(0.0);//Brakes off
 	}
 }
-
 
 void setMotor(float power){//0 to 1.0
 		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
 		 DAC_ALIGN_12B_R, power);
 }
 
-float const maxBrake = 100000;
-float const minBrake = 10000;
-float brakeRange = (maxBrake-minBrake);
-void setBrakes(float power){//range from 1.0 to 0.0
-	float goToPos = power;//for negative logic if needed
-//	if(((brakePosition-minBrake)/brakeRange)<goToPos){//FWD
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-//	}
-//	else if((((brakePosition-minBrake)/brakeRange)-0.01)<goToPos&&(((brakePosition-minBrake)/brakeRange)+0.01)>goToPos){//STOP
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-//	}
-//	else if(((brakePosition-minBrake)/brakeRange)>goToPos){//REV
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
-//	}
-//	else{//STOP - Error
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-//		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-//	}
-	if(power>.75){
-				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
-				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-
+short int bstate = 0;
+/**
+ * Sets the brake motors power
+ */
+void setBrakes(){
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 500);
+	brakePosition = HAL_ADC_GetValue(&hadc1);
+    HAL_ADC_Stop(&hadc1);
+	bstate = 0;
+	if(brakePosition+5>targetBrake&&brakePosition-5<targetBrake){
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+		bstate = 2;
 	}
-	else if(power<.25){
-				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-				  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
-
+	else if(brakePosition>targetBrake){
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_SET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+		bstate = 0;
+	}
+	else if(brakePosition<targetBrake-100){
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_SET);
+		bstate = 1;
 	}
 	else{
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
-
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+		HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+		bstate = 2;
 	}
 }
 
-//void updateMaxAngle(){
-//	maxAngle = ((((TIM12->CCR1)-90355)/53548));
-//}
-
-void updateMaxSpeed(){
-	maxSpeed = ((((TIM9->CCR1)-90355)/53548));
+void setBrakeTarget(int request){
+	if(request>7935){
+		targetBrake = 4095;
+	}
+	else{
+		targetBrake = ((request-5300)*.093)+3850;
+	}
+	if(targetBrake < 3850){
+		targetBrake  = 3850;
+	}
 }
 
+float tim1 = 0;
+float tim2 = 0;
+float tim3 = 0;
+float tim4 = 0;
+float tim5 = 0;
+float tim6 = 0;
+float tim7 = 0;
+float tim8 = 0;
+float tim9 = 0;
+float tim10 = 0;
+float tim11 = 0;
+float tim12 = 0;
 float a = 0;
 float b = 0;
 int cycle = 0;
@@ -371,11 +337,12 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+//  RCC->AHB1ENR |= (1<<0);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_ADC1_Init();
   MX_TIM1_Init();
   MX_TIM2_Init();
@@ -410,12 +377,8 @@ int main(void)
   HAL_TIM_IC_Start(&htim12, TIM_CHANNEL_2);
 
 
-  HAL_ADC_Start_IT(&hadc1);
-
   HAL_TIM_PWM_Start(&htim10, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim11, TIM_CHANNEL_1);
-  TIM10->CCR1 = 135; //Sets the PWM output of tim1 channel 1 to 450
-  TIM11->CCR1 = 0; //Sets the PWM output of tim1 channel 1 to 450
   HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
   /* USER CODE END 2 */
 
@@ -426,52 +389,50 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  //E-STOP
+	  tim1 = TIM1->CCR2;
+	  tim2 = TIM2->CCR2;
+	  tim3 = TIM3->CCR2;
+	  tim4 = TIM4->CCR2;
+	  tim5 = TIM5->CCR2;
+	  tim6 = TIM6->CCR2;
+	  tim7 = TIM7->CCR2;
+	  tim8 = TIM8->CCR2;
+	  tim9 = TIM9->CCR2;
+	  tim10 = TIM10->CCR1;
+	  tim11 = TIM11->CCR1;
+	  tim12 = TIM12->CCR2;
 	  if(TIM4->CCR2>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_RESET);
 		  //Inputs
-		  steeringRequest = TIM2->CCR2;
+		  steeringRequest = tim2;
 		  drivingRequest = TIM5->CCR2;
-		  a = getEncoderAngle();
 		  b = steeringInput(steeringRequest);
 		  //State management
 		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
-			  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(steeringInput(steeringRequest)), (float)kHalDelay));
+			  setSteeringMotor(getPIDPower(getEncoderAngle(), rawSteeringToAngle(b), (float)kHalDelay));
 			  setDrivingMotor(drivingInput(drivingRequest));
-			  //Debug Stuff
-//			  if(cycle>cycleCount){
-//				  printf("%f\n",error);
-//				  cycle = 1;
-//			  }
-//			  else{
-//				  cycle++;
-//			  }
+			  setBrakeTarget(tim12);
 
 		  }
 		  else if(TIM1->CCR2>pwmHighState){//Switch to auto mode, high switch state
 //			  Manual RC Control
-			  setSteeringMotor(steeringInput(steeringRequest));
+			  setSteeringMotor(b);
 			  setDrivingMotor(drivingInput(drivingRequest));
-			  //TODO: Auto Code
-//			  setSteeringMotor(0.5);
+			  setBrakeTarget(tim12);
 		  }
 		  else{
 			  //off state, low switch state
-			  setSteeringMotor(kOffset);
-			  setMotor(0.0);
-//			  setBrakes(1.0);
-//			  TIM10->CCR2 = pwmOutMax/2;//Sets steering motor power to 0
+			setMotor(0.0);
+			targetBrake = 3850;//Full Brakes
 		  }
-
 		  HAL_Delay(1);//For faster response decrease delay
+		  setBrakes();
 	  }
 	  else{
-		  setMotor(0.0);
-//		  setBrakes(1.0);
-		  setSteeringMotor(kOffset);
-
 		  //TODO: Debug Relay
-		  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_0, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_2, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, GPIO_PIN_RESET);
+			setMotor(0.0);
+			setSteeringMotor(0.5);
 	  }
   }
   /* USER CODE END 3 */
@@ -555,14 +516,14 @@ static void MX_ADC1_Init(void)
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV2;
   hadc1.Init.Resolution = ADC_RESOLUTION_12B;
-  hadc1.Init.ScanConvMode = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
   hadc1.Init.DiscontinuousConvMode = DISABLE;
   hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
   hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
   hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
   hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
   {
@@ -740,6 +701,7 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_SlaveConfigTypeDef sSlaveConfig = {0};
   TIM_IC_InitTypeDef sConfigIC = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
@@ -754,6 +716,15 @@ static void MX_TIM1_Init(void)
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_IC_Init(&htim1) != HAL_OK)
   {
     Error_Handler();
@@ -805,6 +776,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 0 */
 
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_SlaveConfigTypeDef sSlaveConfig = {0};
   TIM_IC_InitTypeDef sConfigIC = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
@@ -818,6 +790,15 @@ static void MX_TIM2_Init(void)
   htim2.Init.Period = 4294967295;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
   if (HAL_TIM_IC_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
@@ -1266,10 +1247,10 @@ static void MX_TIM12_Init(void)
 
   /* USER CODE END TIM12_Init 1 */
   htim12.Instance = TIM12;
-  htim12.Init.Prescaler = 0;
+  htim12.Init.Prescaler = 16;
   htim12.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim12.Init.Period = 65535;
-  htim12.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim12.Init.ClockDivision = TIM_CLOCKDIVISION_DIV2;
   htim12.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
   if (HAL_TIM_Base_Init(&htim12) != HAL_OK)
   {
@@ -1343,6 +1324,22 @@ static void MX_USART2_UART_Init(void)
   /* USER CODE BEGIN USART2_Init 2 */
 
   /* USER CODE END USART2_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
 
 }
 
