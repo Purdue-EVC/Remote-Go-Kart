@@ -73,9 +73,6 @@ const int maxEncoderAngle = 347;
 const int minEncoderAngle = 167;
 const int EncoderRange = maxEncoderAngle-minEncoderAngle;//180
 
-const int kDrivingMotorMax = 4096;
-const int kDrivingMotorMin = 0;
-
 const double kOffset = .45;
 
 float kHalDelay = 1;
@@ -147,8 +144,8 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 
 float currentSteeringInputMax = 177900;
 float currentSteeringInputMin = 90000;
-float currentDrivingInputMax = 177900;
-float currentDrivingInputMin = 90000;
+float currentDrivingInputMax = 8935;
+float currentDrivingInputMin = 7935;
 
 const float steeringInputAbsoluteMax = 180000;
 const float steeringInputAbsoluteMin = 80000;
@@ -172,7 +169,7 @@ float drivingInput(uint32_t rawDrivingInput){
 		currentDrivingInputMax = rawDrivingInput;
 	}
 	if(rawDrivingInput < currentDrivingInputMin && rawDrivingInput > drivingInputAbsoluteMin){
-		currentDrivingInputMin = rawDrivingInput;
+		return 0.0;
 	}
 	return (float)(rawDrivingInput-currentDrivingInputMin)/(currentDrivingInputMax-currentDrivingInputMin);
 }
@@ -224,22 +221,19 @@ void setSteeringMotor(float power){
 		steerout = out;
 		TIM10->CCR1 = out+45.0;
 }
-
 /**
  * Sets the driving motor's power
  */
 void setDrivingMotor(float power){
-	short int out = ((power-0.25)/0.75)*4096;//Converts the range 0.25 to 1, to 0v to 3.3v which is 0 to 4096(kDrivingMotorMax)
+	short int out = (power)*4096;
 	o = out;
 	if(power<=.25){
-		setBrakes((float)((.25-power)/0.25));//Brakes on
 		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
 		 DAC_ALIGN_12B_R, 0);//Motor off
 	}
 	else{
 		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
 		 DAC_ALIGN_12B_R, out);//Motor on
-	//		setBrakes(0.0);//Brakes off
 	}
 }
 
@@ -308,7 +302,7 @@ float a = 0;
 float b = 0;
 int cycle = 0;
 int cycleCount = 5;
-uint32_t steeringRequest = (drivingInputAbsoluteMin+drivingInputAbsoluteMax/2);
+uint32_t steeringRequest = (steeringInputAbsoluteMin+steeringInputAbsoluteMax/2);
 uint32_t drivingRequest = 0;
 /* USER CODE END 0 */
 
@@ -404,7 +398,7 @@ int main(void)
 	  if(TIM4->CCR2>pwmLowState){//Checking if E-Stop is switched to the high state, forces user on RC controller to switch the e-stop switch to start it
 		  //Inputs
 		  steeringRequest = tim2;
-		  drivingRequest = TIM5->CCR2;
+		  drivingRequest = tim12;
 		  b = steeringInput(steeringRequest);
 		  //State management
 		  if(TIM1->CCR2<pwmBottomState){//Switch to RC mode, middle switch state
