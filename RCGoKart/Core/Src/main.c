@@ -225,7 +225,7 @@ void setSteeringMotor(float power){
  * Sets the driving motor's power
  */
 void setDrivingMotor(float power){
-	short int out = (power)*4096;
+	short int out = (power)*4096;//convert to 3.3v range
 	o = out;
 	if(power<=0){
 		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
