@@ -227,7 +227,7 @@ void setSteeringMotor(float power){
 void setDrivingMotor(float power){
 	short int out = (power)*4096;
 	o = out;
-	if(power<=.25){
+	if(power<=0){
 		 HAL_DAC_SetValue(&hdac, DAC_CHANNEL_1,
 		 DAC_ALIGN_12B_R, 0);//Motor off
 	}
